@@ -38,13 +38,13 @@ function env(names: string[]) {
   return undefined;
 }
 
-function envNumber(names: string[], fallback: number) {
+function envOptionalNumber(names: string[]) {
   const value = env(names);
   if (!value) {
-    return fallback;
+    return undefined;
   }
   const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 function normalizeProvider(value?: string): TutorProvider {
@@ -100,7 +100,8 @@ function systemPrompt() {
     "Prefer standard robotics notation such as $T_{06}$, $R_{06}$, $p_{06}$, $J(q)$, $\\Delta q$, $e_p$, $e_R$, and $\\lambda^2 I$.",
     "When explaining DLS IK, write the update formula as $$\\Delta q = J^T\\left(JJ^T + \\lambda^2 I\\right)^{-1} e$$ when relevant.",
     "Always close every inline math delimiter $...$ and every display math delimiter $$...$$ before ending the answer.",
-    "Keep the answer complete and compact. Do not start a formula if there is not enough space to finish it.",
+    "Do not impose an app-level word limit. Provide as much derivation detail as needed for the student's question.",
+    "Do not start a formula if there is not enough space to finish it.",
     "Use plain text with short sections. Avoid markdown tables unless they materially clarify a matrix or parameter comparison."
   ].join("\n");
 }
@@ -119,7 +120,7 @@ function userPrompt(payload: TutorPayload) {
     "3. Robot interpretation: what the result means for this 6DOF arm's joints, links, frames, or end effector.",
     "4. Suggested next action: one concrete operation the learner can try in the workbench.",
     "Use LaTeX delimiters for formulas so the UI can render them: inline $...$ and display $$...$$.",
-    "Limit the response to roughly 500-800 Chinese characters unless the student explicitly asks for a longer derivation."
+    "Do not shorten the answer just to satisfy an app-side length limit; there is no project-level word limit."
   ].join("\n");
 }
 
@@ -148,11 +149,21 @@ async function callOpenAICompatible(payload: TutorPayload): Promise<TutorAgentRe
     DEFAULT_OPENAI_BASE_URL;
   const model =
     env(["TUTOR_MODEL", "OPENAI_COMPATIBLE_MODEL", "OPENAI_MODEL", "KIMI_MODEL", "MIMO_MODEL"]) ?? "gpt-4o-mini";
-  const maxTokens = envNumber(["TUTOR_MAX_TOKENS", "OPENAI_COMPATIBLE_MAX_TOKENS"], 1800);
+  const maxTokens = envOptionalNumber(["TUTOR_MAX_TOKENS", "OPENAI_COMPATIBLE_MAX_TOKENS"]);
 
   if (!apiKey) {
     throw new Error("Missing OPENAI-compatible API key. Set TUTOR_API_KEY or OPENAI_COMPATIBLE_API_KEY.");
   }
+
+  const requestBody = {
+    model,
+    temperature: 0.25,
+    ...(maxTokens ? { max_tokens: maxTokens } : {}),
+    messages: [
+      { role: "system", content: systemPrompt() },
+      { role: "user", content: userPrompt(payload) }
+    ]
+  };
 
   const response = await fetch(joinUrl(baseUrl, "/chat/completions"), {
     method: "POST",
@@ -160,15 +171,7 @@ async function callOpenAICompatible(payload: TutorPayload): Promise<TutorAgentRe
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`
     },
-    body: JSON.stringify({
-      model,
-      temperature: 0.25,
-      max_tokens: maxTokens,
-      messages: [
-        { role: "system", content: systemPrompt() },
-        { role: "user", content: userPrompt(payload) }
-      ]
-    })
+    body: JSON.stringify(requestBody)
   });
 
   if (!response.ok) {
@@ -203,7 +206,7 @@ async function callAnthropic(payload: TutorPayload): Promise<TutorAgentResponse>
   const baseUrl = env(["TUTOR_BASE_URL", "ANTHROPIC_BASE_URL"]) ?? DEFAULT_ANTHROPIC_BASE_URL;
   const model = env(["TUTOR_MODEL", "ANTHROPIC_MODEL"]) ?? "claude-sonnet-4-5";
   const version = env(["ANTHROPIC_VERSION"]) ?? "2023-06-01";
-  const maxTokens = envNumber(["TUTOR_MAX_TOKENS", "ANTHROPIC_MAX_TOKENS"], 1800);
+  const maxTokens = envOptionalNumber(["TUTOR_MAX_TOKENS", "ANTHROPIC_MAX_TOKENS"]) ?? 4096;
 
   if (!apiKey) {
     throw new Error("Missing Anthropic API key. Set TUTOR_API_KEY or ANTHROPIC_API_KEY.");

@@ -90,6 +90,8 @@ The tutor is constrained to behave as a robotics kinematics teaching agent, not 
 - Redirect broad or off-topic questions back to the 6DOF robot kinematics context.
 - Output formulas in renderable LaTeX: inline `$...$`, display `$$...$$`, and matrix environments such as `\begin{bmatrix}...\end{bmatrix}`.
 - Avoid putting LaTeX formulas inside code fences, because the Tutor panel renders Markdown plus KaTeX.
+- Do not impose a project-level word limit. For OpenAI-compatible providers, `max_tokens` is omitted unless `TUTOR_MAX_TOKENS` or `OPENAI_COMPATIBLE_MAX_TOKENS` is explicitly set.
+- Provider-side context windows, output limits, billing limits, and latency still apply.
 
 ## Provider Configuration
 
@@ -118,6 +120,8 @@ You can also use shared aliases:
 TUTOR_API_KEY=your_key
 TUTOR_BASE_URL=https://your-openai-compatible-host/v1
 TUTOR_MODEL=your-model
+# Optional. Leave unset to avoid app-side output capping for OpenAI-compatible providers.
+TUTOR_MAX_TOKENS=
 ```
 
 Kimi/Mimo aliases are also supported:
