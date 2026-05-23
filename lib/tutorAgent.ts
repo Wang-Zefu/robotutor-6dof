@@ -21,6 +21,8 @@ export interface TutorAgentResponse {
   provider: TutorProvider;
   model: string;
   fallback: boolean;
+  finishReason?: string;
+  truncated?: boolean;
 }
 
 const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
@@ -34,6 +36,15 @@ function env(names: string[]) {
     }
   }
   return undefined;
+}
+
+function envNumber(names: string[], fallback: number) {
+  const value = env(names);
+  if (!value) {
+    return fallback;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function normalizeProvider(value?: string): TutorProvider {
@@ -88,6 +99,8 @@ function systemPrompt() {
     "For matrices and vectors, use LaTeX environments such as \\begin{bmatrix} ... \\end{bmatrix}. Do not put LaTeX formulas inside code fences.",
     "Prefer standard robotics notation such as $T_{06}$, $R_{06}$, $p_{06}$, $J(q)$, $\\Delta q$, $e_p$, $e_R$, and $\\lambda^2 I$.",
     "When explaining DLS IK, write the update formula as $$\\Delta q = J^T\\left(JJ^T + \\lambda^2 I\\right)^{-1} e$$ when relevant.",
+    "Always close every inline math delimiter $...$ and every display math delimiter $$...$$ before ending the answer.",
+    "Keep the answer complete and compact. Do not start a formula if there is not enough space to finish it.",
     "Use plain text with short sections. Avoid markdown tables unless they materially clarify a matrix or parameter comparison."
   ].join("\n");
 }
@@ -105,7 +118,8 @@ function userPrompt(payload: TutorPayload) {
     "2. Theory: the relevant DH, transform, Jacobian, DLS, error, or singularity concept.",
     "3. Robot interpretation: what the result means for this 6DOF arm's joints, links, frames, or end effector.",
     "4. Suggested next action: one concrete operation the learner can try in the workbench.",
-    "Use LaTeX delimiters for formulas so the UI can render them: inline $...$ and display $$...$$."
+    "Use LaTeX delimiters for formulas so the UI can render them: inline $...$ and display $$...$$.",
+    "Limit the response to roughly 500-800 Chinese characters unless the student explicitly asks for a longer derivation."
   ].join("\n");
 }
 
@@ -121,7 +135,9 @@ function fallbackResponse(payload: TutorPayload, reason?: string): TutorAgentRes
     formulaExplanation: "Standard DH: T = RotZ(theta) * TransZ(d) * TransX(a) * RotX(alpha).",
     provider: "mock",
     model: "mock-tutor",
-    fallback: Boolean(reason)
+    fallback: Boolean(reason),
+    finishReason: reason ? "fallback" : "stop",
+    truncated: false
   };
 }
 
@@ -132,6 +148,7 @@ async function callOpenAICompatible(payload: TutorPayload): Promise<TutorAgentRe
     DEFAULT_OPENAI_BASE_URL;
   const model =
     env(["TUTOR_MODEL", "OPENAI_COMPATIBLE_MODEL", "OPENAI_MODEL", "KIMI_MODEL", "MIMO_MODEL"]) ?? "gpt-4o-mini";
+  const maxTokens = envNumber(["TUTOR_MAX_TOKENS", "OPENAI_COMPATIBLE_MAX_TOKENS"], 1800);
 
   if (!apiKey) {
     throw new Error("Missing OPENAI-compatible API key. Set TUTOR_API_KEY or OPENAI_COMPATIBLE_API_KEY.");
@@ -146,7 +163,7 @@ async function callOpenAICompatible(payload: TutorPayload): Promise<TutorAgentRe
     body: JSON.stringify({
       model,
       temperature: 0.25,
-      max_tokens: 900,
+      max_tokens: maxTokens,
       messages: [
         { role: "system", content: systemPrompt() },
         { role: "user", content: userPrompt(payload) }
@@ -160,20 +177,24 @@ async function callOpenAICompatible(payload: TutorPayload): Promise<TutorAgentRe
   }
 
   const data = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
+    choices?: Array<{ finish_reason?: string; message?: { content?: string } }>;
   };
-  const explanation = data.choices?.[0]?.message?.content?.trim();
+  const choice = data.choices?.[0];
+  const explanation = choice?.message?.content?.trim();
   if (!explanation) {
     throw new Error("OpenAI-compatible response did not include choices[0].message.content.");
   }
 
+  const finishReason = choice?.finish_reason ?? "unknown";
   return {
     explanation,
     suggestedNextAction: "Use the tutor guidance, adjust the joint controls or target pose, then rerun FK/IK.",
     formulaExplanation: "Standard DH: T = RotZ(theta) * TransZ(d) * TransX(a) * RotX(alpha).",
     provider: "openai-compatible",
     model,
-    fallback: false
+    fallback: false,
+    finishReason,
+    truncated: finishReason === "length"
   };
 }
 
@@ -182,6 +203,7 @@ async function callAnthropic(payload: TutorPayload): Promise<TutorAgentResponse>
   const baseUrl = env(["TUTOR_BASE_URL", "ANTHROPIC_BASE_URL"]) ?? DEFAULT_ANTHROPIC_BASE_URL;
   const model = env(["TUTOR_MODEL", "ANTHROPIC_MODEL"]) ?? "claude-sonnet-4-5";
   const version = env(["ANTHROPIC_VERSION"]) ?? "2023-06-01";
+  const maxTokens = envNumber(["TUTOR_MAX_TOKENS", "ANTHROPIC_MAX_TOKENS"], 1800);
 
   if (!apiKey) {
     throw new Error("Missing Anthropic API key. Set TUTOR_API_KEY or ANTHROPIC_API_KEY.");
@@ -196,7 +218,7 @@ async function callAnthropic(payload: TutorPayload): Promise<TutorAgentResponse>
     },
     body: JSON.stringify({
       model,
-      max_tokens: 900,
+      max_tokens: maxTokens,
       temperature: 0.25,
       system: systemPrompt(),
       messages: [{ role: "user", content: userPrompt(payload) }]
@@ -210,6 +232,7 @@ async function callAnthropic(payload: TutorPayload): Promise<TutorAgentResponse>
 
   const data = (await response.json()) as {
     content?: Array<{ type?: string; text?: string }>;
+    stop_reason?: string;
   };
   const explanation = data.content
     ?.filter((part) => part.type === "text" && part.text)
@@ -227,7 +250,9 @@ async function callAnthropic(payload: TutorPayload): Promise<TutorAgentResponse>
     formulaExplanation: "Standard DH: T = RotZ(theta) * TransZ(d) * TransX(a) * RotX(alpha).",
     provider: "anthropic",
     model,
-    fallback: false
+    fallback: false,
+    finishReason: data.stop_reason ?? "unknown",
+    truncated: data.stop_reason === "max_tokens"
   };
 }
 

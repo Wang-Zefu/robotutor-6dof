@@ -23,6 +23,19 @@ interface TutorApiResponse {
   provider: string;
   model: string;
   fallback: boolean;
+  finishReason?: string;
+  truncated?: boolean;
+}
+
+interface ChatMessage extends TutorMessage {
+  meta?: {
+    suggestedNextAction: string;
+    provider: string;
+    model: string;
+    fallback: boolean;
+    finishReason?: string;
+    truncated?: boolean;
+  };
 }
 
 const starters = [
@@ -33,22 +46,71 @@ const starters = [
   "Position IK 和 Pose IK 有什么区别？"
 ];
 
-function formatTutorResponse(result: TutorApiResponse) {
-  const source = result.fallback ? `mock fallback: ${result.model}` : `${result.provider}: ${result.model}`;
-  return `${result.explanation}\n\n**Next action:** ${result.suggestedNextAction}\n\n**Provider:** ${source}`;
+function countUnescaped(text: string, token: "$" | "$$") {
+  let count = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    if (token === "$$" && text[index] === "$" && text[index + 1] === "$" && text[index - 1] !== "\\") {
+      count += 1;
+      index += 1;
+    } else if (
+      token === "$" &&
+      text[index] === "$" &&
+      text[index + 1] !== "$" &&
+      text[index - 1] !== "$" &&
+      text[index - 1] !== "\\"
+    ) {
+      count += 1;
+    }
+  }
+  return count;
 }
 
-function TutorMessageContent({ message }: { message: TutorMessage }) {
+function closeDanglingMath(markdown: string) {
+  let safe = markdown.trim();
+  if (countUnescaped(safe, "$$") % 2 !== 0) {
+    safe += "\n$$";
+  }
+  if (countUnescaped(safe, "$") % 2 !== 0) {
+    safe += "$";
+  }
+  return safe;
+}
+
+function TutorMessageContent({ message }: { message: ChatMessage }) {
   if (message.role === "user") {
     return <div className="whitespace-pre-line">{message.content}</div>;
   }
 
+  const source = message.meta
+    ? message.meta.fallback
+      ? `mock fallback: ${message.meta.model}`
+      : `${message.meta.provider}: ${message.meta.model}`
+    : null;
+
   return (
-    <div className="tutor-markdown text-sm leading-6">
-      <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
-        {message.content}
-      </ReactMarkdown>
-    </div>
+    <>
+      <div className="tutor-markdown text-sm leading-6">
+        <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+          {closeDanglingMath(message.content)}
+        </ReactMarkdown>
+      </div>
+      {message.meta ? (
+        <div className="mt-3 border-t border-slate-800 pt-2 text-xs leading-5 text-slate-400">
+          <div>
+            <span className="font-semibold text-slate-300">Next action:</span> {message.meta.suggestedNextAction}
+          </div>
+          <div>
+            <span className="font-semibold text-slate-300">Provider:</span> {source}
+            {message.meta.finishReason ? ` · finish: ${message.meta.finishReason}` : ""}
+          </div>
+          {message.meta.truncated ? (
+            <div className="text-amber-300">
+              The model hit its token limit. Ask for a shorter derivation or increase TUTOR_MAX_TOKENS.
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </>
   );
 }
 
@@ -60,7 +122,7 @@ export default function TutorPanel({
   targetPose,
   practiceMode
 }: TutorPanelProps) {
-  const [messages, setMessages] = useState<TutorMessage[]>([
+  const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: "assistant",
       content:
@@ -102,7 +164,21 @@ export default function TutorPanel({
       }
 
       const result = (await response.json()) as TutorApiResponse;
-      setMessages((current) => [...current, { role: "assistant", content: formatTutorResponse(result) }]);
+      setMessages((current) => [
+        ...current,
+        {
+          role: "assistant",
+          content: result.explanation,
+          meta: {
+            suggestedNextAction: result.suggestedNextAction,
+            provider: result.provider,
+            model: result.model,
+            fallback: result.fallback,
+            finishReason: result.finishReason,
+            truncated: result.truncated
+          }
+        }
+      ]);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown tutor error.";
       setMessages((current) => [
