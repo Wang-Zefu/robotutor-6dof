@@ -77,6 +77,18 @@ It returns:
 - Optional formula explanation.
 - Provider and model metadata.
 
+## Tutor Agent Constraints
+
+The tutor is constrained to behave as a robotics kinematics teaching agent, not a general chatbot. Its answers should:
+
+- Explain the calculation process before the conclusion.
+- Ground explanations in robot arm theory: coordinate frames, standard DH parameters, homogeneous transforms, `T01...T56`, `T06`, Jacobians, DLS IK, pose error, workspace limits, and singularities.
+- Connect formulas to physical robot meaning, such as joint axes, link geometry, shoulder/elbow reach, wrist orientation, and end-effector pose.
+- Use the current robot state from the UI and cite numeric values only when they are present in the payload.
+- For FK questions, describe the transform chain `RotZ(theta) -> TransZ(d) -> TransX(a) -> RotX(alpha)` and how transforms multiply into `T06`.
+- For IK questions, describe the objective function, error vector, numerical Jacobian, damping term, iteration behavior, convergence criteria, and likely failure causes.
+- Redirect broad or off-topic questions back to the 6DOF robot kinematics context.
+
 ## Provider Configuration
 
 Copy `.env.example` to `.env.local` and choose one provider.

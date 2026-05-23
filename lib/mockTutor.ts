@@ -11,52 +11,133 @@ interface TutorInput {
   practiceMode?: boolean;
 }
 
-function baseSummary(input: TutorInput) {
+function distanceToTarget(input: TutorInput) {
   const [x, y, z] = input.fk.endEffectorPosition;
-  const target = input.targetPose.position;
-  const dx = target[0] - x;
-  const dy = target[1] - y;
-  const dz = target[2] - z;
-  const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+  const [tx, ty, tz] = input.targetPose.position;
+  const dx = tx - x;
+  const dy = ty - y;
+  const dz = tz - z;
 
-  return `当前末端位置为 (${formatNumber(x)}, ${formatNumber(y)}, ${formatNumber(z)}) m，目标位置为 (${formatNumber(
-    target[0]
-  )}, ${formatNumber(target[1])}, ${formatNumber(target[2])}) m，位置误差约 ${formatNumber(distance)} m。`;
+  return {
+    current: [x, y, z],
+    target: [tx, ty, tz],
+    vector: [dx, dy, dz],
+    distance: Math.sqrt(dx * dx + dy * dy + dz * dz)
+  };
+}
+
+function stateLine(input: TutorInput) {
+  const state = distanceToTarget(input);
+
+  return `当前末端位置为 (${state.current.map((value) => formatNumber(value)).join(", ")}) m，目标位置为 (${state.target
+    .map((value) => formatNumber(value))
+    .join(", ")}) m，位置误差向量为 (${state.vector
+    .map((value) => formatNumber(value))
+    .join(", ")}) m，误差范数约 ${formatNumber(state.distance)} m。`;
+}
+
+function response(sections: {
+  calculation: string;
+  theory: string;
+  robotMeaning: string;
+  nextAction: string;
+}) {
+  return [
+    `1. 计算路径 (Calculation path)\n${sections.calculation}`,
+    `2. 理论要点 (Theory)\n${sections.theory}`,
+    `3. 机器人含义 (Robot interpretation)\n${sections.robotMeaning}`,
+    `4. 下一步操作 (Suggested next action)\n${sections.nextAction}`
+  ].join("\n\n");
 }
 
 export function generateMockTutorResponse(input: TutorInput) {
   const question = input.question.trim().toLowerCase();
-  const summary = baseSummary(input);
+  const summary = stateLine(input);
 
   if (question.includes("dh") || question.includes("参数")) {
-    return `${summary}\n\nDH 参数把相邻关节坐标系之间的几何关系拆成四步：绕 Z 轴转 theta，沿 Z 轴平移 d，沿 X 轴平移 a，再绕 X 轴转 alpha。本项目使用标准 DH，表格中的 current theta 来自关节滑块加 theta offset。修改 a、alpha、d 会直接改变每一段连杆的几何布局。`;
+    return response({
+      calculation: `${summary} FK 计算会把每一行 DH 参数和当前关节角组合成局部变换 Ti(i+1)，再从 base 坐标系开始依次相乘。`,
+      theory:
+        "标准 DH 变换按 RotZ(theta) -> TransZ(d) -> TransX(a) -> RotX(alpha) 执行。theta 描述关节绕本地 Z 轴的旋转，d 是沿 Z 轴的偏移，a 是沿 X 轴的连杆长度，alpha 是相邻 Z 轴之间的扭转角。",
+      robotMeaning:
+        "在 6DOF 机械臂中，前几个关节通常决定末端能到哪里，腕部关节更多决定末端坐标系的方向。修改 a、d、alpha 会改变机器人结构本身；修改 theta 会改变当前姿态。",
+      nextAction:
+        "先固定 DH 表，只移动 joint 1 到 joint 3，观察 T06 第四列的位置变化；再移动 wrist joints，观察 roll/pitch/yaw 的变化。"
+    });
   }
 
   if (question.includes("ik") || question.includes("收敛") || question.includes("失败")) {
     const ik = input.ik;
-    if (!ik) {
-      return `${summary}\n\n还没有运行 IK。建议先使用 Position Only 模式求解位置，再尝试 Pose IK。数值 IK 对初始关节角敏感，如果目标太远、姿态约束太强或机械臂接近奇异位形，误差可能下降很慢。`;
-    }
-    return `${summary}\n\n最近一次 IK 状态：${ik.success ? "已收敛" : "未收敛"}，迭代 ${ik.iterations} 次，位置误差 ${formatNumber(
-      ik.positionError
-    )} m。原因：${ik.reason}。如果失败，优先检查目标是否超出工作空间，然后把模式切到 Position Only，或先把 shoulder/elbow 调到更接近目标距离的位置。`;
+    return response({
+      calculation: ik
+        ? `${summary} 最近一次 IK 迭代 ${ik.iterations} 次，位置误差 ${formatNumber(
+            ik.positionError
+          )} m，姿态误差 ${formatNumber(ik.orientationError)}，状态为 ${ik.success ? "已收敛" : "未收敛"}。`
+        : `${summary} 当前还没有运行 IK。IK 会从当前关节角出发，反复计算末端误差和雅可比矩阵，再更新 6 个关节角。`,
+      theory:
+        "数值 IK 的目标是让误差向量 e 变小。Position Only 主要使用位置误差 [dx, dy, dz]；Pose IK 还会加入姿态误差。DLS 方法通常使用 Δq = J^T (J J^T + λ²I)^-1 e，其中 λ 是阻尼，用来降低奇异位形附近的过大关节更新。",
+      robotMeaning:
+        "如果目标超出工作空间、初始姿态离目标太远、shoulder/elbow 接近伸直、或 wrist 轴线接近重合，雅可比会出现弱方向，误差下降会变慢甚至停滞。Pose IK 还可能因为姿态约束过强而比 Position Only 更难收敛。",
+      nextAction:
+        "先切到 Position Only 求位置；如果仍失败，手动调整 joint 1 对准目标水平投影，再用 joint 2 和 joint 3 缩短位置误差后重新 Solve IK。"
+    });
   }
 
   if (question.includes("奇异") || question.includes("singular")) {
-    return `${summary}\n\n奇异位形通常发生在多个关节轴线重合或某些自由度无法独立改变末端运动时。教学判断可以看两点：关节 2/3 接近完全伸直会让位置雅可比退化，腕部关节轴线接近重合会让姿态控制不稳定。DLS 通过阻尼项降低奇异附近的大步跳变，但也会让收敛变慢。`;
+    return response({
+      calculation: `${summary} 判断奇异性时，要看当前关节角对应的雅可比矩阵是否失去有效方向，也就是某些末端运动方向无法由关节速度稳定地产生。`,
+      theory:
+        "雅可比 J 把关节速度 qdot 映射到末端速度 xdot。奇异位形附近，J 的某些方向接近线性相关，导致某些末端方向需要非常大的关节速度才能实现。DLS 通过阻尼项 λ²I 稳定求解，但会牺牲收敛速度和精度。",
+      robotMeaning:
+        "常见结构原因包括 shoulder/elbow 过度伸直导致可达方向变少，以及 wrist 关节轴线重合导致姿态自由度退化。此时 IK 可能表现为误差不降、关节角跳动或姿态误差难以消除。",
+      nextAction:
+        "把目标稍微移离完全伸直方向，或先调整 elbow 让机械臂保持弯曲，再重新求解 IK。"
+    });
   }
 
   if (question.includes("t06") || question.includes("矩阵")) {
-    return `${summary}\n\nT06 是 base 坐标系到末端坐标系的齐次变换。左上 3x3 是末端方向，前三行第四列是末端位置，最后一行保持 [0, 0, 0, 1]。它由 T01 到 T56 连乘得到，因此任一 DH 参数或关节角变化都会传递到最终位姿。`;
+    return response({
+      calculation: `${summary} T06 是从 base 坐标系到 end effector 坐标系的总变换，由 T01*T12*T23*T34*T45*T56 连乘得到。`,
+      theory:
+        "齐次变换矩阵左上 3x3 是旋转矩阵 R06，表示末端坐标系的 x/y/z 轴在 base 坐标系中的方向；前三行第四列是位置 p06；最后一行 [0, 0, 0, 1] 用来保持仿射变换形式。",
+      robotMeaning:
+        "T06 同时回答两个问题：末端在哪里，以及末端工具坐标系朝向哪里。位置 IK 主要匹配 p06；Pose IK 同时匹配 p06 和 R06。",
+      nextAction:
+        "在 FK 面板中先看 T06 第四列，再对照 3D 里的末端点；随后移动 wrist joints，观察 R06 变化而位置变化相对较小。"
+    });
   }
 
   if (question.includes("position") || question.includes("pose") || question.includes("区别")) {
-    return `${summary}\n\nPosition IK 只让末端点靠近目标位置，通常更容易收敛。Pose IK 同时要求位置和 roll/pitch/yaw 接近目标，约束更多，所以在 6DOF 结构、初始姿态或目标姿态不合适时更容易失败。第一版 Pose IK 使用数值姿态误差，适合教学观察，不等同于工业解析 IK。`;
+    return response({
+      calculation: `${summary} Position IK 只最小化位置误差；Pose IK 会同时最小化位置误差和姿态误差。`,
+      theory:
+        "Position IK 的误差维度通常是 3，对应 dx、dy、dz。Pose IK 的误差维度通常是 6，包括 3 个位置误差和 3 个姿态误差。约束维度越高，越依赖关节冗余、初始值和雅可比条件数。",
+      robotMeaning:
+        "对 6DOF 机械臂来说，位置通常主要由 base、shoulder、elbow 决定，姿态主要由 wrist joints 调整。若腕部姿态无法满足目标方向，Pose IK 可能失败，即使末端点已经接近目标。",
+      nextAction:
+        "先用 Position Only 把末端点放到目标附近，再切换 Pose IK 微调 roll/pitch/yaw。"
+    });
   }
 
   if (input.practiceMode) {
-    return `${summary}\n\n练习建议：先调整 base joint 让机械臂朝向目标水平投影，再用 shoulder 和 elbow 改变半径与高度。接近目标后，再用 wrist joints 微调末端方向。`;
+    return response({
+      calculation: `${summary} 练习模式的核心计算是当前末端点与目标点之间的欧氏距离，距离低于阈值时判定完成。`,
+      theory:
+        "手动练习相当于用人的直觉做 IK：先减小大尺度位置误差，再处理小尺度姿态误差。这个过程对应数值 IK 中误差逐步下降的思想。",
+      robotMeaning:
+        "base joint 主要改变水平朝向，shoulder 和 elbow 主要改变半径与高度，wrist joints 主要影响末端方向。先调前 3 个关节通常更有效。",
+      nextAction:
+        "先让 base 指向目标，再调 shoulder/elbow 让末端高度和距离接近目标，最后用 Show Solution 对比数值 IK 的解。"
+    });
   }
 
-  return `${summary}\n\n可以从 FK 路径理解当前状态：每个关节角改变一个局部 Z 轴旋转，DH 表定义了相邻坐标系的固定几何偏移。若要快速靠近目标，先调 joint 1 控制方位，再调 joint 2 和 joint 3 控制主要距离。`;
+  return response({
+    calculation: `${summary} 当前 FK 已经根据 DH 表和 6 个关节角计算出末端位姿；IK 则会反过来从目标位姿推关节角更新。`,
+    theory:
+      "FK 是确定性链式乘法：给定 q 和 DH 参数，唯一得到 T06。IK 是反问题：给定目标位姿，寻找一组 q 让当前 T06 接近目标，因此通常需要数值迭代、误差函数和雅可比矩阵。",
+    robotMeaning:
+      "对这个 Generic 6DOF Arm，前臂几何决定工作空间，腕部结构决定姿态调节能力。观察 FK/IK 时要同时看位置误差、姿态误差和关节构型。",
+    nextAction:
+      "选择一个具体问题，例如 T06、DH 参数、IK 失败或奇异位形，我会按计算步骤解释对应的机器人理论。"
+  });
 }
