@@ -58,7 +58,7 @@ export function generateMockTutorResponse(input: TutorInput) {
     return response({
       calculation: `${summary} FK 计算会把每一行 DH 参数和当前关节角组合成局部变换 Ti(i+1)，再从 base 坐标系开始依次相乘。`,
       theory:
-        "标准 DH 变换按 RotZ(theta) -> TransZ(d) -> TransX(a) -> RotX(alpha) 执行。theta 描述关节绕本地 Z 轴的旋转，d 是沿 Z 轴的偏移，a 是沿 X 轴的连杆长度，alpha 是相邻 Z 轴之间的扭转角。",
+        "标准 DH 变换按 $RotZ(\\theta) \\rightarrow TransZ(d) \\rightarrow TransX(a) \\rightarrow RotX(\\alpha)$ 执行，也就是 $$T_i^{i+1}=R_z(\\theta_i)T_z(d_i)T_x(a_i)R_x(\\alpha_i).$$ 其中 $\\theta$ 描述关节绕本地 $Z$ 轴的旋转，$d$ 是沿 $Z$ 轴的偏移，$a$ 是沿 $X$ 轴的连杆长度，$\\alpha$ 是相邻 $Z$ 轴之间的扭转角。",
       robotMeaning:
         "在 6DOF 机械臂中，前几个关节通常决定末端能到哪里，腕部关节更多决定末端坐标系的方向。修改 a、d、alpha 会改变机器人结构本身；修改 theta 会改变当前姿态。",
       nextAction:
@@ -75,7 +75,7 @@ export function generateMockTutorResponse(input: TutorInput) {
           )} m，姿态误差 ${formatNumber(ik.orientationError)}，状态为 ${ik.success ? "已收敛" : "未收敛"}。`
         : `${summary} 当前还没有运行 IK。IK 会从当前关节角出发，反复计算末端误差和雅可比矩阵，再更新 6 个关节角。`,
       theory:
-        "数值 IK 的目标是让误差向量 e 变小。Position Only 主要使用位置误差 [dx, dy, dz]；Pose IK 还会加入姿态误差。DLS 方法通常使用 Δq = J^T (J J^T + λ²I)^-1 e，其中 λ 是阻尼，用来降低奇异位形附近的过大关节更新。",
+        "数值 IK 的目标是让误差向量 $e$ 变小。Position Only 主要使用位置误差 $e_p=[dx,dy,dz]^T$；Pose IK 还会加入姿态误差 $e_R$。DLS 方法通常使用 $$\\Delta q = J^T\\left(JJ^T + \\lambda^2 I\\right)^{-1} e,$$ 其中 $\\lambda$ 是阻尼，用来降低奇异位形附近的过大关节更新。",
       robotMeaning:
         "如果目标超出工作空间、初始姿态离目标太远、shoulder/elbow 接近伸直、或 wrist 轴线接近重合，雅可比会出现弱方向，误差下降会变慢甚至停滞。Pose IK 还可能因为姿态约束过强而比 Position Only 更难收敛。",
       nextAction:
@@ -87,7 +87,7 @@ export function generateMockTutorResponse(input: TutorInput) {
     return response({
       calculation: `${summary} 判断奇异性时，要看当前关节角对应的雅可比矩阵是否失去有效方向，也就是某些末端运动方向无法由关节速度稳定地产生。`,
       theory:
-        "雅可比 J 把关节速度 qdot 映射到末端速度 xdot。奇异位形附近，J 的某些方向接近线性相关，导致某些末端方向需要非常大的关节速度才能实现。DLS 通过阻尼项 λ²I 稳定求解，但会牺牲收敛速度和精度。",
+        "雅可比 $J(q)$ 把关节速度 $\\dot q$ 映射到末端速度 $\\dot x$：$$\\dot x = J(q)\\dot q.$$ 奇异位形附近，$J$ 的某些方向接近线性相关，导致某些末端方向需要非常大的关节速度才能实现。DLS 通过阻尼项 $\\lambda^2 I$ 稳定求解，但会牺牲收敛速度和精度。",
       robotMeaning:
         "常见结构原因包括 shoulder/elbow 过度伸直导致可达方向变少，以及 wrist 关节轴线重合导致姿态自由度退化。此时 IK 可能表现为误差不降、关节角跳动或姿态误差难以消除。",
       nextAction:
@@ -99,7 +99,7 @@ export function generateMockTutorResponse(input: TutorInput) {
     return response({
       calculation: `${summary} T06 是从 base 坐标系到 end effector 坐标系的总变换，由 T01*T12*T23*T34*T45*T56 连乘得到。`,
       theory:
-        "齐次变换矩阵左上 3x3 是旋转矩阵 R06，表示末端坐标系的 x/y/z 轴在 base 坐标系中的方向；前三行第四列是位置 p06；最后一行 [0, 0, 0, 1] 用来保持仿射变换形式。",
+        "齐次变换矩阵左上 $3\\times3$ 是旋转矩阵 $R_{06}$，表示末端坐标系的 $x/y/z$ 轴在 base 坐标系中的方向；前三行第四列是位置 $p_{06}$：$$T_{06}=\\begin{bmatrix}R_{06} & p_{06}\\\\0\\ 0\\ 0 & 1\\end{bmatrix}.$$",
       robotMeaning:
         "T06 同时回答两个问题：末端在哪里，以及末端工具坐标系朝向哪里。位置 IK 主要匹配 p06；Pose IK 同时匹配 p06 和 R06。",
       nextAction:
@@ -111,7 +111,7 @@ export function generateMockTutorResponse(input: TutorInput) {
     return response({
       calculation: `${summary} Position IK 只最小化位置误差；Pose IK 会同时最小化位置误差和姿态误差。`,
       theory:
-        "Position IK 的误差维度通常是 3，对应 dx、dy、dz。Pose IK 的误差维度通常是 6，包括 3 个位置误差和 3 个姿态误差。约束维度越高，越依赖关节冗余、初始值和雅可比条件数。",
+        "Position IK 的误差维度通常是 3，对应 $e_p=[dx,dy,dz]^T$。Pose IK 的误差维度通常是 6，可写成 $$e=\\begin{bmatrix}e_p\\\\w_R e_R\\end{bmatrix},$$ 包括 3 个位置误差和 3 个姿态误差。约束维度越高，越依赖关节冗余、初始值和雅可比条件数。",
       robotMeaning:
         "对 6DOF 机械臂来说，位置通常主要由 base、shoulder、elbow 决定，姿态主要由 wrist joints 调整。若腕部姿态无法满足目标方向，Pose IK 可能失败，即使末端点已经接近目标。",
       nextAction:

@@ -88,6 +88,8 @@ The tutor is constrained to behave as a robotics kinematics teaching agent, not 
 - For FK questions, describe the transform chain `RotZ(theta) -> TransZ(d) -> TransX(a) -> RotX(alpha)` and how transforms multiply into `T06`.
 - For IK questions, describe the objective function, error vector, numerical Jacobian, damping term, iteration behavior, convergence criteria, and likely failure causes.
 - Redirect broad or off-topic questions back to the 6DOF robot kinematics context.
+- Output formulas in renderable LaTeX: inline `$...$`, display `$$...$$`, and matrix environments such as `\begin{bmatrix}...\end{bmatrix}`.
+- Avoid putting LaTeX formulas inside code fences, because the Tutor panel renders Markdown plus KaTeX.
 
 ## Provider Configuration
 

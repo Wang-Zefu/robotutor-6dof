@@ -2,6 +2,9 @@
 
 import { useState } from "react";
 import { Bot, Send } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import rehypeKatex from "rehype-katex";
+import remarkMath from "remark-math";
 import type { DHParam, FKResult, IKResult, TargetPose, TutorMessage } from "@/types/robot";
 
 interface TutorPanelProps {
@@ -32,7 +35,21 @@ const starters = [
 
 function formatTutorResponse(result: TutorApiResponse) {
   const source = result.fallback ? `mock fallback: ${result.model}` : `${result.provider}: ${result.model}`;
-  return `${result.explanation}\n\nNext action: ${result.suggestedNextAction}\n\nProvider: ${source}`;
+  return `${result.explanation}\n\n**Next action:** ${result.suggestedNextAction}\n\n**Provider:** ${source}`;
+}
+
+function TutorMessageContent({ message }: { message: TutorMessage }) {
+  if (message.role === "user") {
+    return <div className="whitespace-pre-line">{message.content}</div>;
+  }
+
+  return (
+    <div className="tutor-markdown text-sm leading-6">
+      <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+        {message.content}
+      </ReactMarkdown>
+    </div>
+  );
 }
 
 export default function TutorPanel({
@@ -110,13 +127,13 @@ export default function TutorPanel({
         {messages.map((message, index) => (
           <div
             key={index}
-            className={`whitespace-pre-line rounded border p-2 text-sm leading-6 ${
+            className={`rounded border p-2 text-sm leading-6 ${
               message.role === "assistant"
                 ? "border-slate-700 bg-slate-950 text-slate-200"
                 : "border-cyan-900 bg-cyan-950/30 text-cyan-100"
             }`}
           >
-            {message.content}
+            <TutorMessageContent message={message} />
           </div>
         ))}
         {isLoading ? (

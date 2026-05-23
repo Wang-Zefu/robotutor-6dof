@@ -84,6 +84,10 @@ function systemPrompt() {
     "Use the robot state supplied by the user. Cite provided numeric values when useful, but do not invent measurements.",
     "If the user asks a broad or non-robotics question, answer only the part relevant to this 6DOF kinematics workbench and redirect to the robot model.",
     "Prefer Chinese when the user asks in Chinese. Use concise teaching language, but include formulas and frame/axis interpretation when relevant.",
+    "All mathematical formulas must be renderable LaTeX. Use inline math with $...$ and block math with $$...$$.",
+    "For matrices and vectors, use LaTeX environments such as \\begin{bmatrix} ... \\end{bmatrix}. Do not put LaTeX formulas inside code fences.",
+    "Prefer standard robotics notation such as $T_{06}$, $R_{06}$, $p_{06}$, $J(q)$, $\\Delta q$, $e_p$, $e_R$, and $\\lambda^2 I$.",
+    "When explaining DLS IK, write the update formula as $$\\Delta q = J^T\\left(JJ^T + \\lambda^2 I\\right)^{-1} e$$ when relevant.",
     "Use plain text with short sections. Avoid markdown tables unless they materially clarify a matrix or parameter comparison."
   ].join("\n");
 }
@@ -100,7 +104,8 @@ function userPrompt(payload: TutorPayload) {
     "1. Calculation path: what FK/IK quantity is computed and from which state values.",
     "2. Theory: the relevant DH, transform, Jacobian, DLS, error, or singularity concept.",
     "3. Robot interpretation: what the result means for this 6DOF arm's joints, links, frames, or end effector.",
-    "4. Suggested next action: one concrete operation the learner can try in the workbench."
+    "4. Suggested next action: one concrete operation the learner can try in the workbench.",
+    "Use LaTeX delimiters for formulas so the UI can render them: inline $...$ and display $$...$$."
   ].join("\n");
 }
 

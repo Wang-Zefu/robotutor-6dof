@@ -1,3 +1,4 @@
+@import "katex/dist/katex.min.css";
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -47,4 +48,56 @@ input[type="range"] {
 
 .thin-scrollbar::-webkit-scrollbar-track {
   background: #111827;
+}
+
+.tutor-markdown {
+  overflow-wrap: anywhere;
+}
+
+.tutor-markdown p {
+  margin: 0.35rem 0;
+}
+
+.tutor-markdown ul,
+.tutor-markdown ol {
+  margin: 0.4rem 0 0.4rem 1.2rem;
+}
+
+.tutor-markdown li {
+  margin: 0.18rem 0;
+}
+
+.tutor-markdown code {
+  border: 1px solid #334155;
+  border-radius: 4px;
+  background: #020617;
+  padding: 0.05rem 0.25rem;
+  color: #bae6fd;
+  font-size: 0.86em;
+}
+
+.tutor-markdown pre {
+  overflow-x: auto;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  background: #020617;
+  padding: 0.65rem;
+}
+
+.tutor-markdown pre code {
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.tutor-markdown .katex {
+  color: #e5e7eb;
+  font-size: 1.02em;
+}
+
+.tutor-markdown .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin: 0.75rem 0;
+  padding: 0.35rem 0;
 }
